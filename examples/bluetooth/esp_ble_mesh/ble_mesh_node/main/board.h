@@ -12,9 +12,9 @@
 #include "esp_ble_mesh_defs.h"
 
 #if defined(CONFIG_BLE_MESH_ESP_WROOM_32)
-#define LED_R GPIO_NUM_25
-#define LED_G GPIO_NUM_26
-#define LED_B GPIO_NUM_27
+#define LED_R GPIO_NUM_16
+#define LED_G GPIO_NUM_17
+#define LED_B GPIO_NUM_2
 #elif defined(CONFIG_BLE_MESH_ESP_WROVER)
 #define LED_R GPIO_NUM_0
 #define LED_G GPIO_NUM_2
@@ -37,6 +37,6 @@ void board_prov_complete(void);
 
 void board_led_operation(uint8_t pin, uint8_t onoff);
 
-void board_init(void);
+void board_init(void (*onoff_pub_func)(uint8_t));
 
 #endif

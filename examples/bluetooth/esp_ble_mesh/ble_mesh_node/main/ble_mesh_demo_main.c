@@ -22,6 +22,7 @@
 #include "esp_ble_mesh_networking_api.h"
 #include "esp_ble_mesh_provisioning_api.h"
 #include "esp_ble_mesh_config_model_api.h"
+#include "esp_ble_mesh_generic_model_api.h"
 
 #include "board.h"
 
@@ -32,6 +33,8 @@
 extern struct _led_state led_state[3];
 
 static uint8_t dev_uuid[16] = { 0xdd, 0xdd };
+
+static esp_ble_mesh_client_t onoff_client;
 
 static esp_ble_mesh_cfg_srv_t config_server = {
     .relay = ESP_BLE_MESH_RELAY_DISABLED,
@@ -53,6 +56,7 @@ static esp_ble_mesh_cfg_srv_t config_server = {
 };
 
 ESP_BLE_MESH_MODEL_PUB_DEFINE(onoff_pub, 2 + 1, ROLE_NODE);
+ESP_BLE_MESH_MODEL_PUB_DEFINE(onoff_cli_pub, 2 + 2, ROLE_NODE);
 
 static esp_ble_mesh_model_op_t onoff_op[] = {
     ESP_BLE_MESH_MODEL_OP(ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_GET,       0),
@@ -79,10 +83,16 @@ static esp_ble_mesh_model_t extend_model_1[] = {
     &onoff_pub, &led_state[2]),
 };
 
+static esp_ble_mesh_model_t pub_model[] = {
+	ESP_BLE_MESH_MODEL_GEN_ONOFF_CLI(&onoff_cli_pub, &onoff_client),
+};
+
+
 static esp_ble_mesh_elem_t elements[] = {
     ESP_BLE_MESH_ELEMENT(0, root_models, ESP_BLE_MESH_MODEL_NONE),
     ESP_BLE_MESH_ELEMENT(0, extend_model_0, ESP_BLE_MESH_MODEL_NONE),
     ESP_BLE_MESH_ELEMENT(0, extend_model_1, ESP_BLE_MESH_MODEL_NONE),
+	ESP_BLE_MESH_ELEMENT(0, pub_model, ESP_BLE_MESH_MODEL_NONE),
 };
 
 static esp_ble_mesh_comp_t composition = {
@@ -205,6 +215,20 @@ static void gen_onoff_set_handler(esp_ble_mesh_model_t *model,
     }
 }
 
+static void gen_onoff_publisher(uint8_t data)
+{
+	esp_err_t err;
+	onoff_cli_pub.msg->data[2]=data;
+
+    ESP_LOGI(TAG, "%s, Publish 0x%02x from addr 0x%02x",__func__, data,onoff_client.model->element->element_addr);
+    err = esp_ble_mesh_model_publish(pub_model, ESP_BLE_MESH_MODEL_OP_GEN_ONOFF_SET_UNACK,
+                                     2,(uint8_t*) onoff_cli_pub.msg->data+2, ROLE_NODE);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "%s: Publish Generic OnOff Status failed", __func__);
+        return;
+    }
+}
+
 static char *esp_ble_mesh_prov_event_to_str(esp_ble_mesh_prov_cb_event_t event)
 {
     switch (event) {
@@ -304,6 +328,7 @@ static void esp_ble_mesh_model_cb(esp_ble_mesh_model_cb_event_t event,
     case ESP_BLE_MESH_MODEL_SEND_COMP_EVT:
         break;
     case ESP_BLE_MESH_MODEL_PUBLISH_COMP_EVT:
+    	ESP_LOGI(TAG, "ESP_BLE_MESH_MODEL_PUBLISH_COMP_EVT");
         break;
     default:
         break;
@@ -329,7 +354,7 @@ static esp_err_t ble_mesh_init(void)
 
     ESP_LOGI(TAG, "BLE Mesh Node initialized");
 
-    board_led_operation(LED_G, LED_ON);
+    board_led_operation(LED_B, LED_ON);
 
     return err;
 }
@@ -379,7 +404,7 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Initializing...");
 
-    board_init();
+    board_init(gen_onoff_publisher);
 
     err = bluetooth_init();
     if (err) {

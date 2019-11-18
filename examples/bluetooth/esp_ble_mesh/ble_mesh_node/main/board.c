@@ -30,6 +30,13 @@ struct _led_state led_state[3] = {
     { LED_OFF, LED_OFF, LED_B, "blue"  },
 };
 
+uint8_t button_state = 0;
+TickType_t button_debounce_ms = 20;
+TickType_t lastTickTime = 0;
+
+
+void (*onoff_pub_func_global)(uint8_t);
+
 void board_output_number(esp_ble_mesh_output_action_t action, uint32_t number)
 {
     ESP_LOGI(TAG, "Board output number %d", number);
@@ -37,7 +44,7 @@ void board_output_number(esp_ble_mesh_output_action_t action, uint32_t number)
 
 void board_prov_complete(void)
 {
-    board_led_operation(LED_G, LED_OFF);
+    board_led_operation(LED_B, LED_OFF);
 }
 
 void board_led_operation(uint8_t pin, uint8_t onoff)
@@ -72,7 +79,12 @@ static void board_led_init(void)
 static void IRAM_ATTR switch_isr_handler(void *arg)
 {
     uint32_t gpio_num = (uint32_t) arg;
-    xQueueSendFromISR(s_evt_queue, &gpio_num, NULL);
+    TickType_t actualTime = xTaskGetTickCountFromISR();
+    if ((actualTime -  button_debounce_ms) > lastTickTime)
+    {
+    	xQueueSendFromISR(s_evt_queue, &gpio_num, NULL);
+    	lastTickTime = actualTime;
+    }
 }
 
 static void switch_key_init(uint32_t key)
@@ -92,14 +104,12 @@ static void switch_key_init(uint32_t key)
 
 static void switch_task_entry(void *arg)
 {
+    uint32_t io_num;
     while (1) {
-        uint32_t io_num;
         if (xQueueReceive(s_evt_queue, &io_num, portMAX_DELAY) == pdTRUE) {
-            uint8_t onoff = led_state[0].previous;
-            ESP_LOGI(TAG, "GPIO[%d] intr, val: %d", io_num, gpio_get_level(io_num));
-            board_led_operation(LED_R, !onoff);
-            led_state[0].previous = !onoff;
-            //TODO: publish state change message
+			button_state = !button_state;
+            ESP_LOGI(TAG, "GPIO[%d] intr, val: %d", io_num, button_state);
+            onoff_pub_func_global(button_state);
         }
     }
 }
@@ -123,8 +133,9 @@ fail:
     vQueueDelete(s_evt_queue);
 }
 
-void board_init(void)
+void board_init(void (*onoff_pub_func)(uint8_t))
 {
     board_led_init();
     switch_init(GPIO_NUM_18);
+    onoff_pub_func_global = onoff_pub_func;
 }
